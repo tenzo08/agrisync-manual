@@ -1,7 +1,15 @@
 import { router } from "expo-router";
-import React, { createContext, ReactNode, useContext, useState } from "react";
+import React, {
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { supabase } from "../lib/supabase";
 
-export type UserRole = "farmer" | "assistant" | "leader" | "buyer";
+export type UserRole = "farmer" | "assistant" | "coop_leader" | "buyer";
 
 export interface MockUser {
   id: string;
@@ -9,38 +17,6 @@ export interface MockUser {
   phone: string;
   role: UserRole;
 }
-
-// Mock user accounts — replace with Appwrite calls in T1.3
-const MOCK_USERS: (MockUser & { pin: string })[] = [
-  {
-    id: "1",
-    name: "Juan dela Cruz",
-    phone: "09171234567",
-    pin: "1234",
-    role: "farmer",
-  },
-  {
-    id: "2",
-    name: "Carlo dela Cruz",
-    phone: "09179999999",
-    pin: "1234",
-    role: "assistant",
-  },
-  {
-    id: "3",
-    name: "Maria Santos",
-    phone: "09181234567",
-    pin: "5678",
-    role: "leader",
-  },
-  {
-    id: "4",
-    name: "Pedro Reyes",
-    phone: "09191234567",
-    pin: "9012",
-    role: "buyer",
-  },
-];
 
 interface AuthContextType {
   user: MockUser | null;
@@ -59,50 +35,66 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function normalizePhone(raw: string) {
+  return raw.replace(/\s+/g, "").replace(/^(\+63|0063)/, "0");
+}
+
+function toEmail(phone: string) {
+  return `${phone}@agrisync.app`;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<MockUser | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isSigningUp = useRef(false);
+
+  useEffect(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (isSigningUp.current) return;
+
+        if (session?.user) {
+          await loadUser(session.user.id);
+        } else {
+          setUser(null);
+        }
+        setIsLoading(false);
+      },
+    );
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  async function loadUser(id: string) {
+    const { data } = await supabase
+      .from("users")
+      .select("id, full_name, phone_number, role")
+      .eq("id", id)
+      .single();
+
+    if (data) {
+      setUser({
+        id: data.id,
+        name: data.full_name,
+        phone: data.phone_number,
+        role: data.role as UserRole,
+      });
+    }
+  }
 
   async function signIn(phone: string, pin: string) {
     setIsLoading(true);
     setError(null);
 
-    // Simulate network delay
-    await new Promise((r) => setTimeout(r, 800));
+    const clean = normalizePhone(phone);
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: toEmail(clean),
+      password: pin,
+    });
 
-    const normalizedPhone = phone
-      .replace(/\s+/g, "")
-      .replace(/^(\+63|0063)/, "0");
-    const found = MOCK_USERS.find(
-      (u) => u.phone === normalizedPhone && u.pin === pin,
-    );
-
-    if (!found) {
-      setError("Incorrect phone number or PIN. Please try again.");
+    if (authError) {
+      setError("Mali ang numero o PIN. Subukan muli.");
       setIsLoading(false);
-      return;
-    }
-
-    const { pin: _pin, ...safeUser } = found;
-    setUser(safeUser);
-    setIsLoading(false);
-
-    // Role-based routing (T1.3c)
-    switch (safeUser.role) {
-      case "leader":
-        router.replace("/leader/dashboard");
-        break;
-      case "buyer":
-        router.replace("/buyer/marketplace");
-        break;
-      case "farmer":
-      case "assistant":
-        router.replace("/farmer/dashboard");
-        break;
-      default:
-        router.replace("/auth/signin");
-        break;
     }
   }
 
@@ -114,48 +106,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ) {
     setIsLoading(true);
     setError(null);
+    isSigningUp.current = true;
 
-    await new Promise((r) => setTimeout(r, 800));
+    const clean = normalizePhone(phone);
 
-    const normalizedPhone = phone
-      .replace(/\s+/g, "")
-      .replace(/^(\+63|0063)/, "0");
-    const exists = MOCK_USERS.find((u) => u.phone === normalizedPhone);
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("phone_number", clean)
+      .maybeSingle();
 
-    if (exists) {
-      setError("An account with this phone number already exists.");
+    if (existing) {
+      setError("Ang numerong ito ay nakarehistro na.");
       setIsLoading(false);
+      isSigningUp.current = false;
       return;
     }
 
-    const newUser: MockUser = {
-      id: String(Date.now()),
-      name,
-      phone: normalizedPhone,
-      role,
-    };
+    const { data, error: authError } = await supabase.auth.signUp({
+      email: toEmail(clean),
+      password: pin,
+    });
 
-    // In V1 mock mode we just set the user directly
-    // TODO: Replace with Appwrite account.create() + T1.3a POST /auth/register
+    if (authError || !data.user) {
+      setError(authError?.message ?? "Hindi ma-register. Subukan muli.");
+      setIsLoading(false);
+      isSigningUp.current = false;
+      return;
+    }
+
+    const { error: dbError } = await supabase.from("users").insert({
+      id: data.user.id,
+      full_name: name,
+      phone_number: clean,
+      pin_hash: pin,
+      role,
+    });
+
+    if (dbError) {
+      setError(dbError.message);
+      setIsLoading(false);
+      isSigningUp.current = false;
+      return;
+    }
+
+    const newUser: MockUser = { id: data.user.id, name, phone: clean, role };
     setUser(newUser);
     setIsLoading(false);
+    isSigningUp.current = false;
 
     switch (role) {
-      case "leader":
+      case "farmer":
+      case "assistant":
+        router.replace("/farmer/dashboard");
+        break;
+      case "coop_leader":
         router.replace("/leader/dashboard");
         break;
       case "buyer":
         router.replace("/buyer/marketplace");
         break;
-
       default:
         router.replace("/auth/signin");
-        break;
     }
   }
 
   function signOut() {
-    setUser(null);
+    supabase.auth.signOut();
     router.replace("/auth/signin");
   }
 

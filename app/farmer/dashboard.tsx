@@ -21,7 +21,7 @@ export default function FarmerDashboard() {
           Farmer Dashboard
         </Text>
         <Text className="text-sm text-[#6B7A5E] text-center">
-          Place Holder.
+          placeholder pa la.
         </Text>
 
         <TouchableOpacity

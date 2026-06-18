@@ -11,7 +11,7 @@ const ROLES = [
   {
     title: "Pununo ng Kooperatiba",
     terminal: "TERMINAL NG PUNUNO",
-    value: "leader",
+    value: "coop_leader",
   },
   {
     title: "Bumibili ng Produkto",

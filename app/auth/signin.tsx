@@ -63,8 +63,7 @@ export default function SignIn() {
   }
 
   async function handleQuickLogin(item: (typeof MOCK_QUICK_LOGINS)[0]) {
-    setPhone(item.phone);
-    setPassword(item.pin);
+    if (isLoading) return; // ← add this guard
     await signIn(item.phone, item.pin);
   }
 

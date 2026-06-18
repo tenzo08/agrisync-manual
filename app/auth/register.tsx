@@ -15,15 +15,15 @@ import { useAuth, UserRole } from "../../context/AuthContext";
 
 const ROLE_LABELS: Record<string, string> = {
   farmer: "FARMER REGISTRATION",
-  carlo: "CARLO REGISTRATION",
-  leader: "LEADER REGISTRATION",
+  assistant: "ASSISTANT REGISTRATION",
+  coop_leader: "LEADER REGISTRATION",
   buyer: "BUYER REGISTRATION",
 };
 
 const ROLE_TITLES: Record<string, string> = {
   farmer: "REHISTRO NG MAGSASAKA",
-  carlo: "REHISTRO NI CARLO",
-  leader: "REHISTRO NG PUNUNO",
+  assistant: "REHISTRO NG KATUWANG",
+  coop_leader: "REHISTRO NG PUNUNO",
   buyer: "REHISTRO NG BUMIBILI",
 };
 
